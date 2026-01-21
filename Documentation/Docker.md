@@ -1,4 +1,4 @@
-# Unreal Tournament 2004 Dedicated Server (Docker)
+# Docker
 
 This Docker image provides a **Unreal Tournament 2004 dedicated server** suitable for running multiplayer UT2004 servers in a clean, reproducible way.  
 The image is designed for **headless operation**, automatically downloads game assets on first startup, and supports bind-mounted configuration files.
