@@ -146,7 +146,3 @@ docker run --rm -it \
 ## Asset Download
 
 On first startup, the container will automatically download the UT2004 dedicated server assets from the configured URL. The download is tracked using a marker file, so subsequent container restarts will skip the download if the assets are already present.
-
-## License
-Unreal Tournament 2004 is distributed under its own license.
-This repository contains only Docker build logic and helper scripts licensed under MIT.
