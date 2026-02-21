@@ -1,41 +1,41 @@
 # Unreal Tournament 2004 Dedicated Server (Docker)
 
-This repository provides a Dockerized **Unreal Tournament 2004 dedicated server** suitable for running multiplayer UT2004 servers in a clean, reproducible way.  
-The image is designed for **headless operation**, automatically downloads game assets on first startup, and supports bind-mounted configuration files.
+This repository provides a Dockerized **Unreal Tournament 2004 dedicated server** built on the LANCommander base image. The container automatically downloads the dedicated server binaries on first run, supports file overlaying using OverlayFS, and integrates with the LANCommander hook system.
 
 ---
 
 ## Features
 
 - Runs the **Unreal Tournament 2004 dedicated server** (`ucc-bin`)
-- Automatically downloads and extracts game assets on first startup
-- Tracks downloaded assets to prevent re-downloading on container restarts
-- Non-root runtime using `gosu`
-- Supports custom server configuration files
+- Automatically downloads and extracts server binaries on first startup via the `PostInitialization` hook
+- Patches the master server list to use the OpenSpy community server
+- Supports custom file overlays via OverlayFS
+- Extensible via custom PowerShell hook scripts
 
 ## Docker Compose Example
 ```yaml
 services:
   ut2004:
     image: lancommander/ut2004:latest
-    container_name: ut2004-server
+    container_name: ut2004
 
-    # UT2004 uses UDP for game, query, and beacon ports
     ports:
       - "7777:7777/udp"  # Game port
       - "7778:7778/udp"  # Query port
-      - "7779:7779/udp"  # Beacon port
 
-    # Bind mounts so files appear on the host
     volumes:
       - ./config:/config
 
     environment:
       # Optional overrides
-      # SERVER_PORT: 7777
-      # SERVER_ARGS: 'CTF-Face?Game=XGame.xCTFGame?MaxPlayers=16'
+      # START_ARGS: "-ini=SystemSettings.ini -ini=UT2004.ini -ini=UT2004Server.ini"
 
-    # Ensure container restarts if the server crashes or host reboots
+    cap_add:
+      - SYS_ADMIN
+
+    security_opt:
+      - apparmor:unconfined
+
     restart: unless-stopped
 ```
 
@@ -44,109 +44,58 @@ services:
 ## Directory Layout (Host)
 
 ```text
-.
-├── config/
-│   ├── ut-server/          # Game assets (auto-downloaded on first startup)
-│   │   ├── ucc-bin
-│   │   ├── System/
-│   │   └── ...
-│   ├── .assets-downloaded  # Marker file to track downloads
-│   ├── UT2004.ini
-│   ├── Default.ini
-│   └── User.ini
+config/
+├── Server/              # UT2004 server files (auto-downloaded on first run)
+│   └── System/
+│       ├── ucc-bin      # Server binary
+│       ├── UT2004.ini   # Main server configuration
+│       └── ...
+├── Overlay/             # Drop-in overrides (maps, configs, mutators)
+├── Merged/              # OverlayFS merged view (auto-created)
+└── Scripts/
+    └── Hooks/           # Custom PowerShell hook scripts
 ```
 
-The `config` directory **must be writable** by Docker. The `ut-server` directory and its contents are automatically downloaded and extracted on first startup.
-
----
-
-## Configuration
-
-UT2004 server configuration files should be placed in `/config`:
-
-- `UT2004.ini` - Main server configuration
-- `Default.ini` - Default game settings
-- `User.ini` - User-specific settings
-
-The server will use these configuration files if they exist. You can customize server settings, game modes, maps, and other options in these files.
-
-Example server configuration in `UT2004.ini`:
-```ini
-[Engine.GameInfo]
-ServerName=My UT2004 Server
-MaxPlayers=16
-GamePassword=
-AdminPassword=changeme
-```
+The `config` directory **must be writable** by Docker. Server binaries are downloaded and extracted automatically on first run by the `PostInitialization` hook.
 
 ---
 
 ## Environment Variables
 
 | Variable | Description | Default |
-|--------|-------------|---------|
-| `SERVER_PORT` | UDP port the server listens on (game port) | `7777` |
-| `SERVER_ARGS` | Map and game type arguments (see below) | *(empty - uses default: DM-Rankin)* |
-| `UT2004_DOWNLOAD_URL` | URL to download game assets from | `https://s3.amazonaws.com/ut2004-files/dedicated-server-3339-bonuspack.tar.gz` |
+|----------|-------------|---------|
+| `SERVER_URL` | URL to download the UT2004 dedicated server archive | `https://s3.amazonaws.com/ut2004-files/dedicated-server-3339-bonuspack.tar.gz` |
+| `START_EXE` | Server executable path relative to the server directory | `System/ucc-bin` |
+| `START_ARGS` | Arguments passed to the server executable | `-ini=SystemSettings.ini -ini=UT2004.ini -ini=UT2004Server.ini` |
 
-### `SERVER_ARGS`
+---
 
-If `SERVER_ARGS` is not set, the server will use the default map `DM-Rankin` with DeathMatch game type.
+## Configuration
 
-To customize the map and game type, set `SERVER_ARGS` with the map name and options. The format is: `<MapName>?Game=<GameType>?<Options>`
+Server configuration files live under `/config/Server/System/` (or `/config/Overlay/System/` for overrides that survive reinstalls):
 
-Common examples:
+- `UT2004.ini` - Main server configuration
+- `Default.ini` - Default game settings
+- `User.ini` - User-specific settings
 
-```bash
-# Capture the Flag on Face map
-SERVER_ARGS="CTF-Face?Game=XGame.xCTFGame?MaxPlayers=16"
-
-# DeathMatch on Rankin map (default)
-SERVER_ARGS="DM-Rankin?Game=XGame.xDeathMatch?MaxPlayers=8"
-
-# Team DeathMatch
-SERVER_ARGS="DM-Rankin?Game=XGame.xTeamGame?MaxPlayers=16"
-
-# Onslaught mode
-SERVER_ARGS="ONS-Torlan?Game=Onslaught.ONSOnslaughtGame?MaxPlayers=16"
+Example `UT2004.ini` snippet:
+```ini
+[Engine.GameInfo]
+ServerName=My UT2004 Server
+MaxPlayers=16
+AdminPassword=changeme
 ```
 
 ---
 
-## Running the Server
-### Basic run (recommended)
-```bash
-mkdir -p config
-chmod -R 777 config
-
-docker run --rm -it \
-  -p 7777:7777/udp \
-  -p 7778:7778/udp \
-  -p 7779:7779/udp \
-  -v "$(pwd)/config:/config" \
-  lancommander/ut2004:latest
-```
-
-### With custom server arguments
-```bash
-docker run --rm -it \
-  -p 7777:7777/udp \
-  -p 7778:7778/udp \
-  -p 7779:7779/udp \
-  -v "$(pwd)/config:/config" \
-  -e SERVER_ARGS="CTF-Face?Game=XGame.xCTFGame?MaxPlayers=16" \
-  lancommander/ut2004:latest
-```
-
 ## Ports
-- **UDP 7777** – Game port (default)
-- **UDP 7778** – Query port (for server browser)
-- **UDP 7779** – Beacon port (for server discovery)
 
-## Asset Download
+- **UDP 7777** – Game port (clients connect here)
+- **UDP 7778** – Query port (server browser)
 
-On first startup, the container will automatically download the UT2004 dedicated server assets from the configured URL. The download is tracked using a marker file, so subsequent container restarts will skip the download if the assets are already present.
+---
 
 ## License
+
 Unreal Tournament 2004 is distributed under its own license.
 This repository contains only Docker build logic and helper scripts licensed under MIT.
