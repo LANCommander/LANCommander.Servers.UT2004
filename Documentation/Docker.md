@@ -248,3 +248,91 @@ The `PostInitialization` hook automatically patches the server's INI file to poi
 ### Custom Maps and Content
 
 Place additional maps, textures, or other game content in `/config/Overlay/Maps/`, `/config/Overlay/Textures/`, etc. OverlayFS will merge them with the base installation transparently.
+| `UT2004_INI` | The server's ini in `System/`, the one given to `ucc-bin` with `ini=` | `UT2004.ini` | No |
+| `UT2004_MAP_ROTATION` | A rotation that can mix game types (see [LCServer](#lcserver)) | | No |
+| `UT2004_BALANCE_TEAMS` | Sort players into teams by skill when a team game starts | `false` | No |
+| `UT2004_BALANCE_MIN_PLAYERS` | Human players needed before teams are balanced | `4` | No |
+| `UT2004_MAX_OVERTIME` | Minutes of overtime before a tied CTF or Bombing Run game is decided on points (0: no limit) | `0` | No |
+| `MATCH_STATS_ENABLED` | `auto` (on when `MATCH_STATS_SERVER_URL` and `MATCH_STATS_TOKEN` are set), `true` or `false` | `auto` | No |
+| `MATCH_STATS_SERVER_URL` | LANCommander's address, e.g. `http://lancommander:1337` (plain HTTP) | | No |
+| `MATCH_STATS_TOKEN` | A LANCommander access token with the **matches:report** scope | | No |
+| `MATCH_STATS_GAME_ID` | The game's id in LANCommander | | No |
+| `MATCH_STATS_SERVER_ID` | The server's id in LANCommander, if it manages the server | | No |
+| `MATCH_STATS_REPORTER_NAME` | The name matches are reported under (default: the server name) | | No |
+| `MATCH_STATS_MIN_PLAYERS` | Human players a game needs before it is reported | `1` | No |
+| `MATCH_STATS_RECORD_BOTS` | Report bots as players too | `true` | No |
+| `UT2004_STATS_BRIDGE_PORT` | The local port between the server and `ut2004-stats-bridge` | `7790` | No |
+
+## LCServer
+
+The image includes LCServer, LANCommander's server-side UnrealScript package
+(`LCServer/Classes/`). It is never sent to clients, so players need nothing installed. When any of
+`UT2004_MAP_ROTATION`, `UT2004_BALANCE_TEAMS`, `UT2004_MAX_OVERTIME` or the match statistics is on,
+the `PostInitialization` hook copies `LCServer.u` into `System/`, adds `LCServer.LCServerActor` to
+`[Engine.GameEngine] ServerActors`, and writes the settings into the `[LCServer.LCServerActor]`
+section of `UT2004_INI`. That section is rewritten on every start; set these variables instead of
+editing it.
+
+### Map rotation
+
+UT2004's own map lists only cycle through one game type. `UT2004_MAP_ROTATION` is a list of travel
+URLs, separated by `;` or new lines. When a game ends, the server travels to the entry after the
+one being played:
+
+```yaml
+UT2004_MAP_ROTATION: >-
+  CTF-FaceClassic?Game=XGame.xCTFGame?GoalScore=3?TimeLimit=15;
+  BR-Anubis?Game=XGame.xBombingRun?GoalScore=15?TimeLimit=15;
+  ONS-Torlan?Game=Onslaught.ONSOnslaughtGame?GoalScore=1?TimeLimit=20
+```
+
+Options carry over from one map to the next, as they do with any travel. Give each entry every
+option that differs between game types, such as `GoalScore` and `TimeLimit`. The server starts on
+the map in its own command line; when that matches an entry, the rotation goes on from there.
+The next map is announced when a game ends.
+
+### Team balancing
+
+With `UT2004_BALANCE_TEAMS`, when a team game starts with at least `UT2004_BALANCE_MIN_PLAYERS`
+human players, they are sorted into teams by skill, best player first, each to the weaker team
+that still has room. Bots are left to the game's own balancing. A player's skill is where they
+finished on the scoreboard in earlier team games, from 0 (last) to 1 (first). It is kept by player
+name in `System/LCSkill.ini`, and new players start at 0.5. UT2004's `bPlayersBalanceTeams`
+still keeps the team sizes even when players join later.
+
+### Overtime limit
+
+A tied CTF or Bombing Run game goes into overtime until someone scores, which can take a long
+time. With `UT2004_MAX_OVERTIME`, once that many minutes of overtime have passed, the team whose
+players scored the most points between them wins. One minute before, players are warned. If the
+teams are level on points too, play goes on. Onslaught's overtime drains the cores, so it ends by
+itself.
+
+### Match statistics
+
+With the match statistics on, every game is reported to LANCommander as a match:
+
+- the map, game type and settings
+- who played, with team changes
+- kills (weapon or vehicle, suicides, team kills)
+- flag, bomb and power node events, first blood, sprees, multikills and combos
+- each player's totals (score, kills, deaths, flag captures and returns, bomb runs, nodes built
+  and destroyed, ...)
+- the final standings
+
+Players are keyed by name (`name:<name>`; bots `bot:<name>`), which LANCommander links to its
+users.
+
+LCServer sends the games over TCP to `ut2004-stats-bridge` (`StatsBridge/`), which the hook starts
+before the server. The bridge reports them through the LANCommander Interposer, which retries
+while LANCommander can't be reached and keeps undelivered matches in `/config/.interposer/`. A
+game is only reported once `MATCH_STATS_MIN_PLAYERS` human players have been in it, so an empty
+server cycling through its rotation records nothing.
+
+### Rebuilding LCServer.u
+
+The compiled package is committed as `LCServer/LCServer.u`. The Linux dedicated server's
+`ucc-bin` has no `make` commandlet, so `LCServer/build.sh <UT2004 install>` compiles it with the
+Windows `UCC.exe` under Wine, in a `lancommander/wine` container. The 3339 dedicated server
+archive has everything it needs.
+

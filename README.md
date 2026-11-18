@@ -9,6 +9,8 @@ This repository provides a Dockerized **Unreal Tournament 2004 dedicated server*
 - Runs the **Unreal Tournament 2004 dedicated server** (`ucc-bin`)
 - Automatically downloads and extracts server binaries on first startup via the `PostInitialization` hook
 - Patches the master server list to use the OpenSpy community server
+- Mixed game type map rotation, skill-based team balancing and an overtime limit (LCServer, see `Documentation/Docker.md`)
+- Reports every game to LANCommander as a match (`MATCH_STATS_*`)
 - Supports custom file overlays via OverlayFS
 - Extensible via custom PowerShell hook scripts
 
@@ -67,6 +69,12 @@ The `config` directory **must be writable** by Docker. Server binaries are downl
 | `SERVER_URL` | URL to download the UT2004 dedicated server archive | `https://s3.amazonaws.com/ut2004-files/dedicated-server-3339-bonuspack.tar.gz` |
 | `START_EXE` | Server executable path relative to the server directory | `System/ucc-bin` |
 | `START_ARGS` | Arguments passed to the server executable | `-ini=SystemSettings.ini -ini=UT2004.ini -ini=UT2004Server.ini` |
+| `UT2004_MAP_ROTATION` | Travel URLs, separated by `;`, that can mix game types | |
+| `UT2004_BALANCE_TEAMS` | Sort players into teams by skill when a team game starts | `false` |
+| `UT2004_MAX_OVERTIME` | Minutes of overtime before a tied CTF/BR game is decided on points | `0` |
+| `MATCH_STATS_SERVER_URL`, `MATCH_STATS_TOKEN`, `MATCH_STATS_GAME_ID` | Report every game to LANCommander | |
+
+See `Documentation/Docker.md` for every option.
 
 ---
 
